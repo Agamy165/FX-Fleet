@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f766e">
+<title>سيارات الشركة</title>
+<style>
+:root{--bg:#f4f6f8;--ink:#1f2933;--muted:#6b7785;--brand:#0f766e;--bad:#dc2626;--line:#e2e8f0}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Segoe UI",Tahoma,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;margin:0}
+header button{background:transparent;border:1px solid #fff8;color:#fff;border-radius:8px;padding:6px 10px}
+main{max-width:680px;margin:0 auto;padding:16px}
+.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px #0001}
+label{display:block;font-size:14px;color:var(--muted);margin:10px 0 4px}
+input,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;font-family:inherit}
+button.primary{width:100%;margin-top:16px;padding:14px;border:0;border-radius:10px;background:var(--brand);color:#fff;font-size:17px}
+button.link{background:none;border:0;color:var(--brand);padding:8px 10px;font-size:15px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 8px;text-align:center;font-size:18px}
+.tile span{display:block;font-size:34px;margin-bottom:6px}
+.alert{border-radius:12px;padding:14px;margin-bottom:14px;font-weight:600}
+.ok{background:#dcfce7;color:#166534}.warn{background:#fef3c7;color:#92400e}.bad{background:#fee2e2;color:#991b1b}
+.row{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+.row:last-child{border:0}
+.muted{color:var(--muted);font-size:13px}
+.err{color:var(--bad);margin-top:10px;min-height:20px}
+.photos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.photos img,.thumb{width:100%;border-radius:8px;margin-top:6px}
+.thumb{width:70px;margin:4px 4px 0 0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 5px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<header><h1 id="title">سيارات الشركة</h1><button id="btnOut" hidden data-act="logout">خروج</button></header>
+<main id="app"></main>
+<input type="file" id="impFile" accept=".json,application/json" hidden>
+<input type="file" id="carsFile" accept=".xlsx,.xls,.csv,text/csv" hidden>
+
+<script>
+const KINDS={fuel:"وقود",oil:"غيار زيت",tires:"كاوتش",maintenance:"صيانة"};
+const ICON={fuel:"⛽",oil:"🛢️",tires:"🛞",maintenance:"🔧"};
+const OIL_KM=5000, WARN_KM=500;   // فاصل الزيت ومسافة التنبيه
+
+let DB={cars:[],admin:null}, S={view:"login",carId:null,kind:null,msg:""}, P={car:null,pump:null};
+const $=s=>document.querySelector(s), val=id=>($("#"+id)?.value||"").trim();
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
+const toNum=v=>Number(String(v).replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+const plateKey=p=>p.replace(/\s+/g,"").toLowerCase();
+const fmt=n=>Number(n||0).toLocaleString("ar-EG");
+const car=()=>DB.cars.find(c=>c.id===S.carId);
+
+/* ---------- التخزين على الجهاز (IndexedDB) ---------- */
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open("cars-app",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+async function load(){try{const d=await idb();return await new Promise(res=>{const q=d.transaction("kv").objectStore("kv").get("db");q.onsuccess=()=>res(q.result||{cars:[],admin:null});q.onerror=()=>res({cars:[],admin:null})})}catch{return{cars:[],admin:null}}}
+async function save(){try{const d=await idb();await new Promise(res=>{const t=d.transaction("kv","readwrite");t.objectStore("kv").put(DB,"db");t.oncomplete=res;t.onerror=res})}catch{}}
+
+async function hash(s){try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("cars:"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch{let h=5381;for(const c of "cars:"+s)h=(h*33)^c.charCodeAt(0);return"x"+(h>>>0).toString(36)}}
+
+/* ---------- الواجهات ---------- */
+const V={
+login:()=>`<div class="card"><label>رقم اللوحة</label><input id="plate" autocomplete="username">
+<label>الباسورد</label><input id="pass" type="password" autocomplete="current-password">
+<button class="primary" data-act="login">دخول</button><div class="err" style="${S.good?"color:#166534":""}">${esc(S.msg)}</div></div>
+<div class="card"><button class="link" data-act="goAdmin">دخول الإدارة</button>
+<button class="link" data-act="importPick">استيراد ملف بيانات</button></div>`,
+
+adminLogin:()=>`<div class="card"><label>${DB.admin?"الرقم السري للإدارة":"أنشئ رقمًا سريًا للإدارة (أول مرة)"}</label>
+<input id="pin" type="password"><button class="primary" data-act="${DB.admin?"adminEnter":"setPin"}">${DB.admin?"دخول":"حفظ ودخول"}</button>
+<div class="err">${esc(S.msg)}</div><button class="link" data-act="toLogin">رجوع</button></div>`,
+
+admin:()=>{
+const e=DB.cars.find(c=>c.id===S.editId)||{};
+const rows=DB.cars.map(c=>{const t=sums(c),left=OIL_KM-((c.curOdo||0)-(c.lastOil||0));
+const st=left<=0?"متأخر "+(-left):left<=WARN_KM?"قريب "+left:"متبقي "+left;
+return`<tr style="background:${left<=0?"#fee2e2":left<=WARN_KM?"#fef3c7":"none"}"><td>${esc(c.plate)}</td><td>${esc(c.type)}</td><td>${esc(c.year||"")}</td><td>${fmt(c.curOdo)}</td><td>${st}</td>
+<td>${fmt(t.fuel)}</td><td>${fmt(t.oil)}</td><td>${fmt(t.tires)}</td><td>${fmt(t.maintenance)}</td><td><b>${fmt(t.fuel+t.oil+t.tires+t.maintenance)}</b></td>
+<td><button class="link" data-act="editCar" data-id="${c.id}">تعديل</button><button class="link" data-act="carLink" data-id="${c.id}">رابط السائق</button><button class="link" data-act="carFile" data-id="${c.id}">إرسال ملف</button></td></tr>`}).join("");
+return`<div class="card"><h3>${e.id?"تعديل بيانات السيارة":"تسجيل سيارة جديدة"}</h3>
+<label>رقم اللوحة</label><input id="n_plate" value="${esc(e.plate)}">
+<label>نوع السيارة</label><input id="n_type" value="${esc(e.type)}">
+<label>سنة الموديل</label><input id="n_year" type="number" inputmode="numeric" placeholder="مثال: 2022" value="${esc(e.year)}">
+<label>رقم الشاسيه</label><input id="n_chassis" value="${esc(e.chassis)}">
+<label>تاريخ انتهاء الرخصة</label><input id="n_exp" type="date" value="${esc(e.licExp)}">
+<label>عداد البداية (كم)</label><input id="n_odo" type="number" inputmode="numeric" value="${e.id?esc(e.startOdo):""}">
+<label>${e.id?"باسورد جديد (اتركه فارغًا للإبقاء على الحالي)":"باسورد السيارة"}</label><input id="n_pass">
+<button class="primary" data-act="saveCar">${e.id?"حفظ التعديلات":"تسجيل السيارة"}</button>
+${e.id?`<button class="link" data-act="cancelEdit">إلغاء التعديل</button>`:""}<div class="err">${esc(S.msg)}</div></div>
+<div class="card"><h3>السيارات</h3>${DB.cars.length?`<div class="scroll"><table><thead><tr><th>اللوحة</th><th>النوع</th><th>الموديل</th><th>العداد</th><th>الزيت</th><th>وقود</th><th>زيت</th><th>كاوتش</th><th>صيانة</th><th>الإجمالي</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:"<p class='muted'>لا توجد سيارات بعد</p>"}</div>
+<div class="card"><button class="link" data-act="exportCsv">تصدير كل البيانات (Excel)</button>
+<button class="link" data-act="exportAll">نسخة احتياطية كاملة</button>
+<button class="link" data-act="importPick">استيراد بيانات من سائق</button></div>
+<div class="card"><h3>استيراد تعريفات السيارات من Excel</h3>
+<p class="muted">جهّز ملف Excel بأعمدة: اللوحة، النوع، سنة الموديل، رقم الشاسيه، تاريخ انتهاء الرخصة، عداد البداية، الباسورد. السيارة الموجودة (نفس اللوحة) تتحدّث بياناتها، والجديدة تُضاف.</p>
+<button class="link" data-act="carsTemplate">تحميل نموذج جاهز</button>
+<button class="link" data-act="carsPick">اختيار ملف Excel / CSV</button></div>`},
+
+home:()=>{const c=car(),left=OIL_KM-((c.curOdo||0)-(c.lastOil||0));
+const a=left<=0?["bad",`🛢️ الزيت متأخر ${-left} كم — غيّره الآن`]:left<=WARN_KM?["warn",`🛢️ تنبيه: متبقي ${left} كم على غيار الزيت`]:["ok",`🛢️ متبقي ${left} كم على غيار الزيت`];
+return`<div class="alert ${a[0]}">${a[1]}</div>
+<div class="card"><div class="row"><span>السيارة</span><b>${esc(c.type)}${c.year?" — "+esc(c.year):""}</b></div><div class="row"><span>العداد الحالي</span><b>${fmt(c.curOdo)} كم</b></div>
+<div class="row"><span>انتهاء الرخصة</span><b>${esc(c.licExp||"—")}</b></div></div>
+<div class="grid">${Object.keys(KINDS).map(k=>`<button class="tile" data-act="open" data-k="${k}"><span>${ICON[k]}</span>${KINDS[k]}</button>`).join("")}</div>
+<button class="link" data-act="history">عرض السجل</button>
+<button class="link" data-act="myFile">إرسال بياناتي للإدارة</button>`},
+
+form:()=>{const k=S.kind;return`<div class="card"><h2>${ICON[k]} ${KINDS[k]}</h2>
+${k==="fuel"?`<div class="photos"><div><label>صورة عداد السيارة</label><input type="file" id="phCar" accept="image/*" capture="environment"><img id="pvCar" hidden></div>
+<div><label>صورة عداد الطلمبة</label><input type="file" id="phPump" accept="image/*" capture="environment"><img id="pvPump" hidden></div></div><div class="muted" id="ocr"></div>`:""}
+${k==="fuel"||k==="oil"?`<label>قراءة العداد الحالية (كم)</label><input id="odo" type="number" inputmode="numeric">`:""}
+${k==="tires"?`<label>عدد الكاوتش</label><input id="count" type="number" inputmode="numeric">`:""}
+${k==="maintenance"?`<label>بيان الصيانة</label><textarea id="note" rows="3"></textarea>`:""}
+<label>المبلغ (جنيه)</label><input id="amount" type="number" inputmode="decimal" step="0.01">
+<label>التاريخ</label><input id="date" type="date" value="${today()}">
+<button class="primary" data-act="saveLog">حفظ</button><button class="link" data-act="home">رجوع</button><div class="err">${esc(S.msg)}</div></div>`},
+
+history:()=>{const c=car(),L=[...c.logs].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+return`<div class="card"><h2>السجل</h2>${L.length?L.map(l=>`<div class="row"><span><b>${KINDS[l.kind]}</b><br><span class="muted">${esc([l.odo&&fmt(l.odo)+" كم",l.count&&l.count+" كاوتش",l.note].filter(Boolean).join(" • "))}</span>
+${l.photoCar?`<br><img class="thumb" src="${l.photoCar}">`:""}${l.photoPump?`<img class="thumb" src="${l.photoPump}">`:""}</span>
+<span>${fmt(l.amount)} ج<br><span class="muted">${esc(l.date)}</span></span></div>`).join(""):"<p class='muted'>لا توجد عمليات بعد</p>"}
+<button class="link" data-act="home">رجوع</button></div>`}
+};
+const sums=c=>{const t={fuel:0,oil:0,tires:0,maintenance:0};c.logs.forEach(l=>t[l.kind]+=l.amount||0);return t};
+
+function render(){
+  const c=car();
+  $("#title").textContent=S.view==="admin"?"لوحة الإدارة":c&&S.view!=="login"?c.plate:"سيارات الشركة";
+  $("#btnOut").hidden=!(S.view==="admin"||c);
+  $("#app").innerHTML=V[S.view]();
+}
+const go=(view,msg="")=>{S.view=view;S.msg=msg;S.good=false;render()};
+
+/* ---------- الصور وقراءة الأرقام ---------- */
+async function compress(file){const b=await createImageBitmap(file),s=Math.min(1,640/b.width),cv=document.createElement("canvas");
+  cv.width=Math.round(b.width*s);cv.height=Math.round(b.height*s);cv.getContext("2d").drawImage(b,0,0,cv.width,cv.height);return cv.toDataURL("image/jpeg",.55)}
+async function ocr(file){try{$("#ocr").textContent="جاري قراءة الصورة…";
+  const T=await import("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js");
+  const {data}=await T.recognize(file,"eng");const n=(data.text.match(/\d+(\.\d+)?/g)||[]).sort((a,b)=>b.length-a.length)[0];
+  $("#ocr").textContent=n?"تمت القراءة — راجع الرقم قبل الحفظ":"اكتب الرقم يدويًا";return n||null}catch{$("#ocr").textContent="اكتب الرقم يدويًا (القراءة التلقائية تحتاج إنترنت)";return null}}
+
+document.addEventListener("change",async e=>{
+  const t=e.target;
+  if(t.id==="phCar"||t.id==="phPump"){const f=t.files[0];if(!f)return;const isCar=t.id==="phCar";
+    P[isCar?"car":"pump"]=await compress(f);const pv=$(isCar?"#pvCar":"#pvPump");pv.src=P[isCar?"car":"pump"];pv.hidden=false;
+    const n=await ocr(f);if(n){const el=$(isCar?"#odo":"#amount");if(el&&!el.value)el.value=isCar?Math.round(Number(n)):n}}
+  if(t.id==="impFile"){const f=t.files[0];if(!f)return;try{const inc=JSON.parse(await f.text());const n=merge(inc);await save();t.value="";
+    alert("تم الاستيراد: "+n+" عنصر جديد");render()}catch{alert("الملف غير صالح")}}
+  if(t.id==="carsFile"){const f=t.files[0];if(!f)return;const isX=/\.xlsx?$/i.test(f.name);let msg;
+    try{let rows;
+      if(isX){await loadXLSX();const wb=XLSX.read(await f.arrayBuffer(),{type:"array",cellDates:true});
+        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:"",dateNF:"yyyy-mm-dd"})}
+      else rows=parseCSV(await f.text());
+      msg=await importCars(rows)}
+    catch{msg=isX?"تعذر قراءة ملف Excel (يحتاج إنترنت أول مرة). احفظه كـ CSV وجرب مرة أخرى":"الملف غير صالح"}
+    t.value="";alert(msg);render()}
+});
+
+/* ---------- استيراد تعريفات السيارات من Excel / CSV ---------- */
+const dig=v=>String(v??"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).trim();
+const HDR={plate:["اللوحة","رقم اللوحة"],type:["النوع","نوع السيارة"],year:["سنة الموديل","الموديل"],chassis:["رقم الشاسيه","الشاسيه"],exp:["تاريخ انتهاء الرخصة","انتهاء الرخصة"],odo:["عداد البداية","العداد"],pass:["الباسورد","باسورد","كلمة السر"]};
+function loadXLSX(){return window.XLSX?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+function parseCSV(t){t=t.replace(/^﻿/,"");const first=t.split("\n")[0];
+  const d=[",",";","\t"].map(x=>[x,first.split(x).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const rows=[];let r=[],f="",q=false;
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true;
+    else if(c===d){r.push(f);f=""}
+    else if(c==="\n"||c==="\r"){if(c==="\r"&&t[i+1]==="\n")i++;r.push(f);f="";rows.push(r);r=[]}
+    else f+=c}
+  if(f!==""||r.length){r.push(f);rows.push(r)}return rows}
+function isoDate(v){v=dig(v);let m=v.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(m)return`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  m=v.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);return m?`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`:""}
+async function importCars(rows){
+  rows=rows.filter(r=>r.some(c=>String(c??"").trim()));if(rows.length<2)return"الملف فارغ";
+  const head=rows[0].map(h=>String(h??"").trim()),col={};
+  for(const k in HDR)col[k]=head.findIndex(h=>HDR[k].includes(h));
+  if(col.plate<0||col.type<0)return"لم أجد عمودي «اللوحة» و«النوع» في الصف الأول";
+  let added=0,updated=0;const bad=[];
+  for(let i=1;i<rows.length;i++){
+    const g=k=>col[k]<0?"":String(rows[i][col[k]]??"").trim();
+    const plate=g("plate"),type=g("type");if(!plate||!type){bad.push(i+1);continue}
+    const year=dig(g("year")),odoTxt=dig(g("odo")),exp=isoDate(g("exp")),chassis=g("chassis"),pass=g("pass");
+    const e=DB.cars.find(c=>c.key===plateKey(plate));
+    if(e){e.type=type;if(year)e.year=year;if(chassis)e.chassis=chassis;if(exp)e.licExp=exp;
+      if(odoTxt!==""){e.startOdo=toNum(odoTxt)||0;if(!e.logs.length){e.curOdo=e.startOdo;e.lastOil=e.startOdo}}
+      if(pass){if(pass.length<4){bad.push(i+1);continue}e.pass=await hash(pass)}
+      updated++}
+    else{if(pass.length<4){bad.push(i+1);continue}
+      const odo=toNum(odoTxt)||0;
+      DB.cars.push({id:uid(),key:plateKey(plate),plate,type,year,chassis,licExp:exp,startOdo:odo,curOdo:odo,lastOil:odo,pass:await hash(pass),logs:[]});added++}}
+  await save();
+  return`تمت إضافة ${added} سيارة وتحديث ${updated}`+(bad.length?`\nتم تخطي الصفوف: ${bad.join("، ")} (بيانات ناقصة أو الباسورد أقل من 4 أحرف)`:"")}
+
+/* ---------- التصدير والاستيراد ---------- */
+async function sendFile(name,text,type){const f=new File([text],name,{type});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:name});return}catch(e){if(e.name==="AbortError")return}}
+  const a=document.createElement("a");a.href=URL.createObjectURL(f);a.download=name;a.click()}
+const strip=c=>({...c,logs:c.logs});
+function csv(cars){const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"';const r=[["اللوحة","النوع","الموديل","العملية","التاريخ","العداد","المبلغ","العدد","البيان"]];
+  cars.forEach(c=>c.logs.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(l=>r.push([c.plate,c.type,c.year||"",KINDS[l.kind],l.date,l.odo||"",l.amount,l.count||"",l.note||""])));
+  return"﻿"+r.map(x=>x.map(q).join(",")).join("\n")}
+function merge(inc){let n=0;for(const c of inc.cars||[]){const m=DB.cars.find(x=>x.key===c.key);
+  if(!m){DB.cars.push(c);n++;continue}
+  const ids=new Set(m.logs.map(l=>l.id));for(const l of c.logs||[])if(!ids.has(l.id)){m.logs.push(l);n++}
+  m.curOdo=Math.max(m.curOdo||0,c.curOdo||0);m.lastOil=Math.max(m.lastOil||0,c.lastOil||0)}
+  if(!DB.admin&&inc.admin)DB.admin=inc.admin;return n}
+
+/* ---------- الأوامر ---------- */
+const A={
+async login(){const k=plateKey(val("plate")),h=await hash(val("pass"));const c=DB.cars.find(x=>x.key===k&&x.pass===h);
+  if(!c)return go("login",DB.cars.length?"رقم اللوحة أو الباسورد غير صحيح":"لا توجد بيانات سيارات على هذا الجهاز. افتح رابط السيارة الذي أرسلته لك الإدارة أولًا");S.carId=c.id;go("home")},
+logout(){S.carId=null;go("login")},
+toLogin(){go("login")}, goAdmin(){go("adminLogin")}, home(){go("home")}, history(){go("history")},
+async setPin(){const p=val("pin");if(p.length<4)return go("adminLogin","الرقم السري 4 خانات على الأقل");DB.admin=await hash(p);await save();go("admin")},
+async adminEnter(){if(await hash(val("pin"))!==DB.admin)return go("adminLogin","الرقم السري غير صحيح");go("admin")},
+async saveCar(){const plate=val("n_plate"),pass=val("n_pass"),e=DB.cars.find(c=>c.id===S.editId);
+  const fail=m=>go2(m);   // يعرض الخطأ دون مسح ما كُتب في الحقول
+  if(!plate||!val("n_type")||!val("n_chassis"))return fail("أكمل البيانات الأساسية");
+  const year=val("n_year");if(year&&!(toNum(year)>=1950&&toNum(year)<=2100))return fail("سنة الموديل غير صحيحة");
+  if(DB.cars.some(c=>c.key===plateKey(plate)&&c!==e))return fail("اللوحة مسجلة بالفعل");
+  const odo=toNum(val("n_odo"))||0;
+  const f={key:plateKey(plate),plate,type:val("n_type"),year:year?String(toNum(year)):"",chassis:val("n_chassis"),licExp:val("n_exp"),startOdo:odo};
+  if(e){
+    if(pass){if(pass.length<4)return fail("الباسورد 4 أحرف على الأقل");f.pass=await hash(pass)}
+    Object.assign(e,f);delete e.licNo;
+    if(!e.logs.length){e.curOdo=odo;e.lastOil=odo}   // لا عمليات بعد: العداد يتبع عداد البداية
+    S.editId=null;
+  }else{
+    if(pass.length<4)return fail("الباسورد 4 أحرف على الأقل");
+    DB.cars.push({id:uid(),...f,pass:await hash(pass),curOdo:odo,lastOil:odo,logs:[]});
+  }
+  await save();go("admin")},
+editCar(a){S.editId=a.dataset.id;go("admin");window.scrollTo(0,0)},
+cancelEdit(){S.editId=null;go("admin")},
+open(a){S.kind=a.dataset.k;P={car:null,pump:null};go("form")},
+async saveLog(){const c=car(),k=S.kind,amount=toNum(val("amount")),date=val("date"),odo=toNum(val("odo"));
+  if(!(amount>0))return go2("اكتب المبلغ");if(!date)return go2("اختر التاريخ");
+  const l={id:uid(),kind:k,date,amount};
+  if(k==="fuel"||k==="oil"){if(!(odo>0))return go2("اكتب قراءة العداد");if(odo<(c.curOdo||0))return go2("القراءة أقل من آخر عداد مسجل ("+c.curOdo+")");l.odo=odo}
+  if(k==="tires"){const n=toNum(val("count"));if(!(n>0))return go2("اكتب عدد الكاوتش");l.count=n}
+  if(k==="maintenance"){if(!val("note"))return go2("اكتب بيان الصيانة");l.note=val("note")}
+  if(k==="fuel"){l.photoCar=P.car;l.photoPump=P.pump}
+  c.logs.push(l);if(l.odo)c.curOdo=l.odo;if(k==="oil")c.lastOil=l.odo;await save();go("home")},
+exportCsv(){sendFile("cars-"+today()+".csv",csv(DB.cars),"text/csv")},
+exportAll(){sendFile("cars-backup-"+today()+".json",JSON.stringify(DB),"application/json")},
+myFile(){sendFile("car-"+car().key+"-"+today()+".json",JSON.stringify({cars:[car()]}),"application/json")},
+carFile(a){const c=DB.cars.find(x=>x.id===a.dataset.id);sendFile("car-"+c.key+".json",JSON.stringify({cars:[c]}),"application/json")},
+importPick(){$("#impFile").click()},
+async carLink(a){const c=DB.cars.find(x=>x.id===a.dataset.id);
+  const d={key:c.key,plate:c.plate,type:c.type,year:c.year||"",chassis:c.chassis||"",licExp:c.licExp||"",startOdo:c.startOdo||0,curOdo:c.curOdo||0,lastOil:c.lastOil||0,pass:c.pass};
+  const b64=btoa(unescape(encodeURIComponent(JSON.stringify(d)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const url=location.href.split("#")[0]+"#car="+b64;
+  if(navigator.share){try{await navigator.share({title:"سيارة "+c.plate,text:"رابط تطبيق سيارتك ("+c.plate+") — افتحه مرة واحدة ثم ادخل برقم اللوحة والباسورد",url});return}catch(e){if(e.name==="AbortError")return}}
+  try{await navigator.clipboard.writeText(url);alert("تم نسخ رابط السائق، الصقه في واتساب")}catch{prompt("انسخ هذا الرابط وابعته للسائق:",url)}},
+carsPick(){$("#carsFile").click()},
+carsTemplate(){sendFile("cars-template.csv","﻿"+["اللوحة,النوع,سنة الموديل,رقم الشاسيه,تاريخ انتهاء الرخصة,عداد البداية,الباسورد","أ ب ج 1234,تويوتا هايلكس,2022,ABC123456789,2027-06-30,15000,1234"].join("\n"),"text/csv")}
+};
+const go2=m=>{$("#app").querySelector(".err").textContent=m};
+document.addEventListener("click",e=>{const a=e.target.closest("[data-act]");if(a)A[a.dataset.act]?.(a)});
+
+/* فتح رابط السائق: يجهّز السيارة على هذا الجهاز تلقائيًا */
+async function applyCarLink(c){
+  if(!c||!c.key||!c.plate||!c.pass)throw 0;
+  const e=DB.cars.find(x=>x.key===c.key);
+  if(e){Object.assign(e,{plate:c.plate,type:c.type,year:c.year,chassis:c.chassis,licExp:c.licExp,startOdo:c.startOdo,pass:c.pass});
+    e.curOdo=Math.max(e.curOdo||0,c.curOdo||0);e.lastOil=Math.max(e.lastOil||0,c.lastOil||0)}
+  else DB.cars.push({...c,id:uid(),logs:[]});
+  await save()}
+load().then(async d=>{DB=d;
+  const m=location.hash.match(/^#car=(.+)$/);
+  if(m){try{const c=JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,"+").replace(/_/g,"/")))));
+      await applyCarLink(c);S.msg="تم تجهيز السيارة "+c.plate+" — ادخل برقم اللوحة والباسورد";S.good=true;
+      history.replaceState(null,"",location.pathname+location.search)}
+    catch{S.msg="الرابط غير صالح، اطلب رابطًا جديدًا من الإدارة"}}
+  render()});
+</script>
+</body>
+</html>
