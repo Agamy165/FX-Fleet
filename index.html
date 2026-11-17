@@ -182,7 +182,7 @@ admin:()=>{
 const e=DB.cars.find(c=>c.id===S.editId)||{};
 const rows=DB.cars.map(c=>{const t=sums(c),left=oilLeft(c),tre=lastOf(c,"tires"),tUsed=tre?getLatestOdometerAnywhere(c)-tre.odo:null;
 const st=left<=0?"متأخر "+(-left):left<=WARN_KM?"قريب "+left:"متبقي "+left;
-return`<tr style="background:${left<=0?"#fee2e2":left<=WARN_KM?"#fef3c7":"none"}"><td>${esc(c.plate)}</td><td>${esc(c.type)}</td><td>${esc(c.year||"")}</td><td>${fmt(getLatestOdometerAnywhere(c))}</td><td>${st}</td><td>${tUsed==null?"—":tUsed>TIRE_KM?"تجاوز "+fmt(tUsed-TIRE_KM):fmt(tUsed)}</td>
+return`<tr style="background:${left<=0?"#fee2e2":left<=WARN_KM?"#fef3c7":"none"}"><td>${esc(c.plate)}</td><td>${esc(c.driver||"")}</td><td>${esc(c.type)}</td><td>${esc(c.year||"")}</td><td>${fmt(getLatestOdometerAnywhere(c))}</td><td>${st}</td><td>${tUsed==null?"—":tUsed>TIRE_KM?"تجاوز "+fmt(tUsed-TIRE_KM):fmt(tUsed)}</td>
 <td>${fmt(t.fuel)}</td><td>${fmt(t.oil)}</td><td>${fmt(t.tires)}</td><td>${fmt(t.battery)}</td><td>${fmt(t.maintenance)}</td><td><b>${fmt(t.fuel+t.oil+t.tires+t.battery+t.maintenance)}</b></td>
 <td><button class="link" data-act="editCar" data-id="${c.id}">تعديل</button><button class="link" data-act="carLink" data-id="${c.id}">رابط السائق</button><button class="link" data-act="carFile" data-id="${c.id}">إرسال ملف</button></td></tr>`}).join("");
 return`<div class="card"><h3>بيانات الشركة</h3>
@@ -193,6 +193,7 @@ return`<div class="card"><h3>بيانات الشركة</h3>
 <div class="card"><h3>${e.id?"تعديل بيانات السيارة":"تسجيل سيارة جديدة"}</h3>
 <label>رقم اللوحة</label><input id="n_plate" value="${esc(e.plate)}">
 <label>نوع السيارة</label><input id="n_type" value="${esc(e.type)}">
+<label>اسم السائق</label><input id="n_driver" value="${esc(e.driver)}" autocomplete="off">
 <label>سنة الموديل</label><input id="n_year" type="number" inputmode="numeric" placeholder="مثال: 2022" value="${esc(e.year)}">
 <label>رقم الشاسيه</label><input id="n_chassis" value="${esc(e.chassis)}">
 <label>تاريخ انتهاء الرخصة</label><input id="n_exp" type="date" value="${esc(e.licExp)}">
@@ -200,7 +201,7 @@ return`<div class="card"><h3>بيانات الشركة</h3>
 <label>${e.id?"باسورد جديد (اتركه فارغًا للإبقاء على الحالي)":"باسورد السيارة"}</label><input id="n_pass">
 <button class="primary" data-act="saveCar">${e.id?"حفظ التعديلات":"تسجيل السيارة"}</button>
 ${e.id?`<button class="link" data-act="cancelEdit">إلغاء التعديل</button>`:""}<div class="err">${esc(S.msg)}</div></div>
-<div class="card"><h3>السيارات</h3>${DB.cars.length?`<div class="scroll"><table><thead><tr><th>اللوحة</th><th>النوع</th><th>الموديل</th><th>العداد</th><th>الزيت</th><th>الإطارات (كم)</th><th>وقود</th><th>زيت</th><th>كاوتش</th><th>بطارية</th><th>صيانات أخرى</th><th>الإجمالي</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:"<p class='muted'>لا توجد سيارات بعد</p>"}</div>
+<div class="card"><h3>السيارات</h3>${DB.cars.length?`<div class="scroll"><table><thead><tr><th>اللوحة</th><th>السائق</th><th>النوع</th><th>الموديل</th><th>العداد</th><th>الزيت</th><th>الإطارات (كم)</th><th>وقود</th><th>زيت</th><th>كاوتش</th><th>بطارية</th><th>صيانات أخرى</th><th>الإجمالي</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:"<p class='muted'>لا توجد سيارات بعد</p>"}</div>
 <div class="card"><button class="link" data-act="exportCsv">تصدير كل البيانات (Excel)</button>
 <button class="link" data-act="exportAll">نسخة احتياطية كاملة</button>
 <button class="link" data-act="importPick">استيراد بيانات من سائق</button></div>
@@ -216,7 +217,7 @@ ${e.id?`<button class="link" data-act="cancelEdit">إلغاء التعديل</bu
 
 home:()=>{const c=car(),fs=fuelStats(c);
 return`${alertsFor(c).map(a=>`<div class="alert ${a[0]}">${a[1]}</div>`).join("")}
-<div class="card"><div class="row"><span>السيارة</span><b>${esc(c.type)}${c.year?" — "+esc(c.year):""}</b></div><div class="row"><span>العداد الحالي</span><b>${fmt(getLatestOdometerAnywhere(c))} كم</b></div>
+<div class="card">${c.driver?`<div class="row"><span>السائق</span><b>${esc(c.driver)}</b></div>`:""}<div class="row"><span>السيارة</span><b>${esc(c.type)}${c.year?" — "+esc(c.year):""}</b></div><div class="row"><span>العداد الحالي</span><b>${fmt(getLatestOdometerAnywhere(c))} كم</b></div>
 ${fs.avg?`<div class="row"><span>متوسط الاستهلاك</span><b>${fs.avg.toFixed(1)} كم/لتر</b></div>`:""}
 <div class="row"><span>انتهاء الرخصة</span><b>${esc(c.licExp||"—")}</b></div></div>
 <div class="grid">${Object.keys(KINDS).map(k=>`<button class="tile" data-act="open" data-k="${k}"><span>${ICON[k]}</span>${KINDS[k]}</button>`).join("")}</div>
@@ -345,7 +346,7 @@ document.addEventListener("change",async e=>{
 
 /* ---------- استيراد تعريفات السيارات من Excel / CSV ---------- */
 const dig=v=>String(v??"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).trim();
-const HDR={plate:["اللوحة","رقم اللوحة"],type:["النوع","نوع السيارة"],year:["سنة الموديل","الموديل"],chassis:["رقم الشاسيه","الشاسيه"],exp:["تاريخ انتهاء الرخصة","انتهاء الرخصة"],odo:["عداد البداية","العداد"],pass:["الباسورد","باسورد","كلمة السر"]};
+const HDR={plate:["اللوحة","رقم اللوحة"],type:["النوع","نوع السيارة"],driver:["اسم السائق","السائق"],year:["سنة الموديل","الموديل"],chassis:["رقم الشاسيه","الشاسيه"],exp:["تاريخ انتهاء الرخصة","انتهاء الرخصة"],odo:["عداد البداية","العداد"],pass:["الباسورد","باسورد","كلمة السر"]};
 function loadXLSX(){return window.XLSX?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
 function parseCSV(t){t=t.replace(/^﻿/,"");const first=t.split("\n")[0];
   const d=[",",";","\t"].map(x=>[x,first.split(x).length]).sort((a,b)=>b[1]-a[1])[0][0];
@@ -369,15 +370,15 @@ async function importCars(rows){
   for(let i=1;i<rows.length;i++){
     const g=k=>col[k]<0?"":String(rows[i][col[k]]??"").trim();
     const plate=g("plate"),type=g("type");if(!plate||!type){bad.push(i+1);continue}
-    const year=dig(g("year")),odoTxt=dig(g("odo")),exp=isoDate(g("exp")),chassis=g("chassis"),pass=g("pass");
+    const year=dig(g("year")),odoTxt=dig(g("odo")),exp=isoDate(g("exp")),chassis=g("chassis"),pass=g("pass"),driver=g("driver");
     const e=DB.cars.find(c=>c.key===plateKey(plate));
-    if(e){e.type=type;if(year)e.year=year;if(chassis)e.chassis=chassis;if(exp)e.licExp=exp;
+    if(e){e.type=type;if(driver)e.driver=driver;if(year)e.year=year;if(chassis)e.chassis=chassis;if(exp)e.licExp=exp;
       if(odoTxt!==""){e.startOdo=toNum(odoTxt)||0;if(!e.logs.length){e.curOdo=e.startOdo;e.lastOil=e.startOdo}}
       if(pass){if(pass.length<4){bad.push(i+1);continue}e.pass=await hash(pass)}
       updated++}
     else{if(pass.length<4){bad.push(i+1);continue}
       const odo=toNum(odoTxt)||0;
-      DB.cars.push({id:uid(),key:plateKey(plate),plate,type,year,chassis,licExp:exp,startOdo:odo,curOdo:odo,lastOil:odo,pass:await hash(pass),logs:[]});added++}}
+      DB.cars.push({id:uid(),key:plateKey(plate),plate,type,driver,year,chassis,licExp:exp,startOdo:odo,curOdo:odo,lastOil:odo,pass:await hash(pass),logs:[]});added++}}
   await save();
   return`تمت إضافة ${added} سيارة وتحديث ${updated}`+(bad.length?`\nتم تخطي الصفوف: ${bad.join("، ")} (بيانات ناقصة أو الباسورد أقل من 4 أحرف)`:"")}
 
@@ -386,8 +387,8 @@ async function sendFile(name,text,type){const f=new File([text],name,{type});
   if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:name});return}catch(e){if(e.name==="AbortError")return}}
   const a=document.createElement("a");a.href=URL.createObjectURL(f);a.download=name;a.click()}
 const strip=c=>({...c,logs:c.logs});
-function csv(cars){const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"';const r=[["اللوحة","النوع","الموديل","العملية","التاريخ","العداد","المبلغ","العدد","البيان","لترات","سعر اللتر"]];
-  cars.forEach(c=>c.logs.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(l=>r.push([c.plate,c.type,c.year||"",KINDS[l.kind],l.date,l.odo||"",l.amount,l.count||"",l.note||"",l.liters||"",l.liters?+(l.amount/l.liters).toFixed(2):""])));
+function csv(cars){const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"';const r=[["اللوحة","السائق","النوع","الموديل","العملية","التاريخ","العداد","المبلغ","العدد","البيان","لترات","سعر اللتر"]];
+  cars.forEach(c=>c.logs.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(l=>r.push([c.plate,c.driver||"",c.type,c.year||"",KINDS[l.kind],l.date,l.odo||"",l.amount,l.count||"",l.note||"",l.liters||"",l.liters?+(l.amount/l.liters).toFixed(2):""])));
   return"﻿"+r.map(x=>x.map(q).join(",")).join("\n")}
 function merge(inc){let n=0;for(const c of inc.cars||[]){const m=DB.cars.find(x=>x.key===c.key);
   if(!m){DB.cars.push(c);n++;continue}
@@ -413,7 +414,7 @@ async saveCar(){const plate=val("n_plate"),pass=val("n_pass"),e=DB.cars.find(c=>
   const year=val("n_year");if(year&&!(toNum(year)>=1950&&toNum(year)<=2100))return fail("سنة الموديل غير صحيحة");
   if(DB.cars.some(c=>c.key===plateKey(plate)&&c!==e))return fail("اللوحة مسجلة بالفعل");
   const odo=toNum(val("n_odo"))||0;
-  const f={key:plateKey(plate),plate,type:val("n_type"),year:year?String(toNum(year)):"",chassis:val("n_chassis"),licExp:val("n_exp"),startOdo:odo};
+  const f={key:plateKey(plate),plate,type:val("n_type"),driver:val("n_driver"),year:year?String(toNum(year)):"",chassis:val("n_chassis"),licExp:val("n_exp"),startOdo:odo};
   if(e){
     if(pass){if(pass.length<4)return fail("الباسورد 4 أحرف على الأقل");f.pass=await hash(pass)}
     Object.assign(e,f);delete e.licNo;
@@ -444,7 +445,7 @@ myFile(){sendFile("car-"+car().key+"-"+today()+".json",JSON.stringify({cars:[car
 carFile(a){const c=DB.cars.find(x=>x.id===a.dataset.id);sendFile("car-"+c.key+".json",JSON.stringify({cars:[c],brand:DB.brand||null,fromAdmin:true}),"application/json")},
 importPick(){$("#impFile").click()},
 async carLink(a){const c=DB.cars.find(x=>x.id===a.dataset.id);
-  const d={key:c.key,plate:c.plate,type:c.type,year:c.year||"",chassis:c.chassis||"",licExp:c.licExp||"",startOdo:c.startOdo||0,curOdo:c.curOdo||0,lastOil:c.lastOil||0,pass:c.pass,sync:DB.sync||null,brand:(DB.brand&&DB.brand.name)?{name:DB.brand.name}:null};
+  const d={key:c.key,plate:c.plate,type:c.type,driver:c.driver||"",year:c.year||"",chassis:c.chassis||"",licExp:c.licExp||"",startOdo:c.startOdo||0,curOdo:c.curOdo||0,lastOil:c.lastOil||0,pass:c.pass,sync:DB.sync||null,brand:(DB.brand&&DB.brand.name)?{name:DB.brand.name}:null};
   const b64=btoa(unescape(encodeURIComponent(JSON.stringify(d)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
   const url=location.href.split("#")[0]+"#car="+b64;
   if(navigator.share){try{await navigator.share({title:"سيارة "+c.plate,text:"رابط تطبيق سيارتك ("+c.plate+") — افتحه مرة واحدة ثم ادخل برقم اللوحة والباسورد",url});return}catch(e){if(e.name==="AbortError")return}}
@@ -463,7 +464,7 @@ async testSync(){const url=val("s_url"),secret=val("s_secret");
   try{const r=await fetch(url,{method:"POST",body:JSON.stringify({secret,ping:true})});const j=await r.json();
     alert(j.ok?"الاتصال يعمل ✓":"الاتصال وصل لكن الرمز السري غير مطابق")}
   catch{alert("تعذر الاتصال. تأكد من الرابط ومن أن النشر على «Anyone»")}},
-carsTemplate(){sendFile("cars-template.csv","﻿"+["اللوحة,النوع,سنة الموديل,رقم الشاسيه,تاريخ انتهاء الرخصة,عداد البداية,الباسورد","أ ب ج 1234,تويوتا هايلكس,2022,ABC123456789,2027-06-30,15000,1234"].join("\n"),"text/csv")}
+carsTemplate(){sendFile("cars-template.csv","﻿"+["اللوحة,اسم السائق,النوع,سنة الموديل,رقم الشاسيه,تاريخ انتهاء الرخصة,عداد البداية,الباسورد","أ ب ج 1234,أحمد محمد,تويوتا هايلكس,2022,ABC123456789,2027-06-30,15000,1234"].join("\n"),"text/csv")}
 };
 const go2=m=>{$("#app").querySelector(".err").textContent=m};
 document.addEventListener("keydown",e=>{if(e.key!=="Enter")return;const id=e.target.id;
@@ -476,7 +477,7 @@ let flushing=false;
 async function flush(){
   if(!DB.sync?.url||!navigator.onLine||flushing)return 0;flushing=true;let n=0;
   try{for(const c of DB.cars)for(const l of c.logs){if(l.synced)continue;
-    const r=await fetch(DB.sync.url,{method:"POST",body:JSON.stringify({secret:DB.sync.secret,id:l.id,plate:c.plate,type:c.type,
+    const r=await fetch(DB.sync.url,{method:"POST",body:JSON.stringify({secret:DB.sync.secret,id:l.id,plate:c.plate,type:c.type,driver:c.driver||"",
       kind:SHEET_KIND[l.kind]||KINDS[l.kind],date:l.date,odo:l.odo||"",amount:l.amount,count:l.count||"",liters:l.liters||"",note:l.note||"",photoCar:l.photoCar||"",photoPump:l.photoPump||""})});
     const j=await r.json();if(!j.ok)break;l.synced=true;n++}}
   catch{}
@@ -489,7 +490,7 @@ async function applyCarLink(c){
   if(c.sync&&c.sync.url)DB.sync=c.sync;delete c.sync;
   if(c.brand&&c.brand.name)DB.brand={...(DB.brand||{}),name:c.brand.name};delete c.brand;
   const e=DB.cars.find(x=>x.key===c.key);
-  if(e){Object.assign(e,{plate:c.plate,type:c.type,year:c.year,chassis:c.chassis,licExp:c.licExp,startOdo:c.startOdo,pass:c.pass});
+  if(e){Object.assign(e,{plate:c.plate,type:c.type,driver:c.driver||e.driver||"",year:c.year,chassis:c.chassis,licExp:c.licExp,startOdo:c.startOdo,pass:c.pass});
     e.curOdo=Math.max(e.curOdo||0,c.curOdo||0);e.lastOil=Math.max(e.lastOil||0,c.lastOil||0)}
   else DB.cars.push({...c,id:uid(),logs:[]});
   await save()}
